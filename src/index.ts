@@ -5,7 +5,6 @@ import cors from 'cors';
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Redis 연결 (Docker Compose에서 서비스 이름을 'redis'로 잡을 예정)
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 app.use(express.json());
