@@ -9,7 +9,8 @@ const app = express();
 const port = process.env.PORT || 3000;
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
-app.use(cors()); // CORS는 그대로 두기
+// ✅ 전역 미들웨어는 CORS만 남김! (스트림 파싱 방지)
+app.use(cors());
 
 const mcpServer = new Server(
   { name: "hey-relay-server", version: "2.0.0" },
@@ -35,7 +36,7 @@ const TOOLS = [
   }
 ];
 
-// --- 도구 실행 로직 (형의 코드 그대로!) ---
+// --- 도구 실행 로직 ---
 async function executeTool(name: string, args: any = {}) {
   const PREFIX = "memo:";
   if (name === "pull_memo") {
@@ -69,9 +70,10 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
   return await executeTool(request.params.name, request.params.arguments);
 });
 
-// --- 핵심: 라우터 설정 (모든 길은 /mcp로!) ---
+// --- 핵심: 라우터 설정 ---
 let transport: SSEServerTransport | null = null;
 
+// 🚨 형이 빼먹었던 부분 부활! (클로드가 처음에 연결을 맺는 길)
 app.get('/mcp', async (req, res) => {
   console.log("--- New SSE Connection (GET /mcp) ---");
   
@@ -80,13 +82,14 @@ app.get('/mcp', async (req, res) => {
     try { await mcpServer.close(); } catch (e) {}
   }
 
-  // 💡 포인트: 첫 번째 인자를 "/mcp"로 줘서 POST도 이리로 오게 함!
   transport = new SSEServerTransport("/mcp", res);
   await mcpServer.connect(transport);
 });
 
+// 클로드가 명령을 보내는 길
 app.post('/mcp', async (req, res) => {
-  console.log(`--- New Message (POST /mcp: ${req.body.method}) ---`);
+  console.log("--- New Message (POST /mcp) ---"); 
+  
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
@@ -94,7 +97,7 @@ app.post('/mcp', async (req, res) => {
   }
 });
 
-// ✅ 수정: /push 에만 express.json() 미들웨어를 콕 집어서 넣어주기!
+// ✅ 아이패드 푸시 전용 (여기만 express.json() 달아줌!)
 app.post('/push', express.json(), async (req, res) => {
   const { command } = req.body;
   const id = Date.now().toString();
