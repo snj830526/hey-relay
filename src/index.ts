@@ -82,19 +82,34 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 // 3. SSE 트랜스포트 라우팅
 let transport: SSEServerTransport | null = null;
 
-// 클로드가 처음 연결(GET)할 때 타는 곳
 app.get('/mcp', async (req, res) => {
-  // 메시지는 /message 경로로 받겠다고 설정 (클라이언트에게 알려줌)
+  // 1. 기존에 연결된 게 있다면 깔끔하게 헤어지기(close) ㅋㅋㅋ
+  if (transport) {
+    try {
+      await mcpServer.close();
+    } catch (e) {
+      // 이미 닫혔으면 무시!
+    }
+  }
+
+  // 2. 새로운 통로 개설
   transport = new SSEServerTransport("/message", res);
   await mcpServer.connect(transport);
+
+  // 3. [보너스] 클라이언트가 연결을 끊으면(브라우저 닫기 등) 리소스 정리해주는 센스!
+  res.on('close', async () => {
+    console.log("Client disconnected. Cleaning up...");
+    await mcpServer.close();
+    transport = null;
+  });
 });
 
-// 실제로 명령(POST)이 들어오는 곳
 app.post('/message', async (req, res) => {
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
-    res.status(400).send("No active session");
+    // 세션이 없으면 400 던지기
+    res.status(400).send("No active MCP session. Please connect via GET /mcp first.");
   }
 });
 
