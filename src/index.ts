@@ -1,7 +1,6 @@
 import express from 'express';
 import { Redis } from 'ioredis';
 import cors from 'cors';
-// MCP SDK 임포트
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -13,30 +12,22 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 app.use(express.json());
 app.use(cors());
 
-// 1. MCP 서버 인스턴스 초기화
 const mcpServer = new Server(
   { name: "hey-relay-server", version: "2.0.0" },
   { capabilities: { tools: {} } }
 );
 
-// --- 기존 도구 정의 및 실행 로직 (동일) ---
+// --- 도구 정의 ---
 const TOOLS = [
   {
     name: "pull_memo",
     description: "아이패드에서 보낸 메모를 꺼냅니다. 읽은 항목은 제거됩니다.",
-    inputSchema: {
-      type: "object",
-      properties: { peek: { type: "boolean" } },
-    },
+    inputSchema: { type: "object", properties: { peek: { type: "boolean" } } },
   },
   {
     name: "push_memo",
     description: "Claude가 정리한 내용을 저장합니다.",
-    inputSchema: {
-      type: "object",
-      properties: { command: { type: "string" } },
-      required: ["command"],
-    },
+    inputSchema: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
   },
   {
     name: "list_memos",
@@ -45,6 +36,7 @@ const TOOLS = [
   }
 ];
 
+// --- 도구 실행 로직 (형의 코드 그대로!) ---
 async function executeTool(name: string, args: any = {}) {
   const PREFIX = "memo:";
   if (name === "pull_memo") {
@@ -73,56 +65,37 @@ async function executeTool(name: string, args: any = {}) {
   throw new Error(`Unknown tool: ${name}`);
 }
 
-// 2. SDK 핸들러 연결
 mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
   return await executeTool(request.params.name, request.params.arguments);
 });
 
-// 3. SSE 트랜스포트 라우팅 (Sticky 세션 버전)
+// --- 핵심: 라우터 설정 (모든 길은 /mcp로!) ---
 let transport: SSEServerTransport | null = null;
 
 app.get('/mcp', async (req, res) => {
-  console.log("--- New GET /mcp connection attempt ---");
-
-  // 1. 기존 연결이 있어도 굳이 close()를 빡빡하게 하지 말자!
-  // 새로운 요청이 오면 그냥 덮어씌우는 게 정신 건강에 좋아 ㅋㅋㅋ
+  console.log("--- New SSE Connection (GET /mcp) ---");
   
-  transport = new SSEServerTransport("/message", res);
-  
-  try {
-    // 이미 연결되어 있다는 에러를 방지하기 위해 슥~ 
-    await mcpServer.connect(transport);
-    console.log("MCP Server connected to transport successfully.");
-  } catch (err: any) {
-    console.log("Already connected or reconnecting... keeping current session.");
-  }
-
-  // 2. [범인 검거] res.on('close') 부분은 과감하게 주석 처리!
-  /*
-  res.on('close', async () => {
-    console.log("Client connection closed, but keeping transport active for POST requests.");
-  });
-  */
-});
-
-app.post('/message', async (req, res) => {
-  console.log(`--- POST /message received (Method: ${req.body.method}) ---`);
-  
+  // 기존 연결 청소
   if (transport) {
-    try {
-      await transport.handlePostMessage(req, res);
-    } catch (err: any) {
-      console.error("Error handling POST message:", err);
-      res.status(500).send(err.message);
-    }
+    try { await mcpServer.close(); } catch (e) {}
+  }
+
+  // 💡 포인트: 첫 번째 인자를 "/mcp"로 줘서 POST도 이리로 오게 함!
+  transport = new SSEServerTransport("/mcp", res);
+  await mcpServer.connect(transport);
+});
+
+app.post('/mcp', async (req, res) => {
+  console.log(`--- New Message (POST /mcp: ${req.body.method}) ---`);
+  if (transport) {
+    await transport.handlePostMessage(req, res);
   } else {
-    console.log("Error: No active transport session found!");
-    res.status(400).send("No active MCP session. Please connect via GET /mcp first.");
+    res.status(400).send("No active session");
   }
 });
 
-// --- 기존 아이패드 푸시 엔드포인트 ---
+// 아이패드용 푸시
 app.post('/push', async (req, res) => {
   const { command } = req.body;
   const id = Date.now().toString();
