@@ -79,36 +79,45 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
   return await executeTool(request.params.name, request.params.arguments);
 });
 
-// 3. SSE 트랜스포트 라우팅
+// 3. SSE 트랜스포트 라우팅 (Sticky 세션 버전)
 let transport: SSEServerTransport | null = null;
 
 app.get('/mcp', async (req, res) => {
-  // 1. 기존에 연결된 게 있다면 깔끔하게 헤어지기(close) ㅋㅋㅋ
-  if (transport) {
-    try {
-      await mcpServer.close();
-    } catch (e) {
-      // 이미 닫혔으면 무시!
-    }
+  console.log("--- New GET /mcp connection attempt ---");
+
+  // 1. 기존 연결이 있어도 굳이 close()를 빡빡하게 하지 말자!
+  // 새로운 요청이 오면 그냥 덮어씌우는 게 정신 건강에 좋아 ㅋㅋㅋ
+  
+  transport = new SSEServerTransport("/message", res);
+  
+  try {
+    // 이미 연결되어 있다는 에러를 방지하기 위해 슥~ 
+    await mcpServer.connect(transport);
+    console.log("MCP Server connected to transport successfully.");
+  } catch (err: any) {
+    console.log("Already connected or reconnecting... keeping current session.");
   }
 
-  // 2. 새로운 통로 개설
-  transport = new SSEServerTransport("/message", res);
-  await mcpServer.connect(transport);
-
-  // 3. [보너스] 클라이언트가 연결을 끊으면(브라우저 닫기 등) 리소스 정리해주는 센스!
+  // 2. [범인 검거] res.on('close') 부분은 과감하게 주석 처리!
+  /*
   res.on('close', async () => {
-    console.log("Client disconnected. Cleaning up...");
-    await mcpServer.close();
-    transport = null;
+    console.log("Client connection closed, but keeping transport active for POST requests.");
   });
+  */
 });
 
 app.post('/message', async (req, res) => {
+  console.log(`--- POST /message received (Method: ${req.body.method}) ---`);
+  
   if (transport) {
-    await transport.handlePostMessage(req, res);
+    try {
+      await transport.handlePostMessage(req, res);
+    } catch (err: any) {
+      console.error("Error handling POST message:", err);
+      res.status(500).send(err.message);
+    }
   } else {
-    // 세션이 없으면 400 던지기
+    console.log("Error: No active transport session found!");
     res.status(400).send("No active MCP session. Please connect via GET /mcp first.");
   }
 });
