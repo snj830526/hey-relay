@@ -81,25 +81,31 @@ async function executeTool(name: string, args: any = {}) {
 // --- 라우터 설정 ---
 
 // MCP 엔드포인트
-app.post('/mcp', async (req, res) => {
+app.all('/mcp', async (req, res) => {
+  if (req.method === 'GET') {
+    return res.json({
+      jsonrpc: "2.0",
+      result: { tools: TOOLS }
+    });
+  }
+
   const { method, params, id } = req.body;
   
   try {
     if (method === "initialize") {
-      return res.json({ jsonrpc: "2.0", id, result: {
-        protocolVersion: "2024-11-05",
-        serverInfo: { name: "hey-relay-server", version: "2.0.0" },
-        capabilities: { tools: {} }
-      }});
+      return res.json({
+        jsonrpc: "2.0", id, result: {
+          protocolVersion: "2024-11-05",
+          serverInfo: { name: "hey-relay-server", version: "2.0.0" },
+          capabilities: { tools: {} }
+        }
+      });
     }
     if (method === "tools/list") return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
     if (method === "tools/call") {
       const result = await executeTool(params.name, params.arguments);
       return res.json({ jsonrpc: "2.0", id, result });
     }
-    if (method === "ping") return res.json({ jsonrpc: "2.0", id, result: {} });
-    
-    res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } });
   } catch (err: any) {
     res.status(500).json({ jsonrpc: "2.0", id, error: { code: -32000, message: err.message } });
   }
