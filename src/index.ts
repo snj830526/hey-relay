@@ -9,8 +9,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
-app.use(express.json());
-app.use(cors());
+app.use(cors()); // CORS는 그대로 두기
 
 const mcpServer = new Server(
   { name: "hey-relay-server", version: "2.0.0" },
@@ -95,8 +94,8 @@ app.post('/mcp', async (req, res) => {
   }
 });
 
-// 아이패드용 푸시
-app.post('/push', async (req, res) => {
+// ✅ 수정: /push 에만 express.json() 미들웨어를 콕 집어서 넣어주기!
+app.post('/push', express.json(), async (req, res) => {
   const { command } = req.body;
   const id = Date.now().toString();
   await redis.set(`memo:${id}`, command);
