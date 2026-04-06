@@ -35,6 +35,18 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "push_summary",
+    description: "Claude가 대화 내용을 요약해서 Redis에 저장합니다. 아이패드 앱에서 pull할 용도입니다.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string" },
+        title: { type: "string" }
+      },
+      required: ["content"]
+    },
+  },
+  {
     name: "pull_summary",
     description: "앱에서 pull할 대화 요약을 꺼냅니다. 읽은 항목은 제거됩니다.",
     inputSchema: { type: "object", properties: { peek: { type: "boolean" } } },
@@ -77,6 +89,13 @@ async function executeTool(name: string, args: any = {}) {
     const keys = await redis.keys(`${MEMO_PREFIX}*`);
     const text = keys.length === 0 ? "(비어 있음)" : `총 ${keys.length}개\n${keys.map(k => k.replace(MEMO_PREFIX, "")).join("\n")}`;
     return { content: [{ type: "text", text }] };
+  }
+  if (name === "push_summary") {
+    const { content, title } = args;
+    const id = Date.now().toString();
+    const payload = JSON.stringify({ title: title ?? null, content, savedAt: new Date().toISOString() });
+    await redis.set(`${SUMMARY_PREFIX}${id}`, payload);
+    return { content: [{ type: "text", text: `✓ 요약 저장 완료 (key: ${id})` }] };
   }
   if (name === "pull_summary") {
     return pullFromRedis(SUMMARY_PREFIX, args.peek === true);
