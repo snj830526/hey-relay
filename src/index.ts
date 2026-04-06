@@ -95,6 +95,7 @@ async function executeTool(name: string, args: any = {}) {
     const id = Date.now().toString();
     const payload = JSON.stringify({ title: title ?? null, content, savedAt: new Date().toISOString() });
     await redis.set(`${SUMMARY_PREFIX}${id}`, payload);
+    notifyAllSummaryClients();
     return { content: [{ type: "text", text: `✓ 요약 저장 완료 (key: ${id})` }] };
   }
   if (name === "pull_summary") {
@@ -112,6 +113,18 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS 
 mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
   return await executeTool(request.params.name, request.params.arguments);
 });
+
+// --- Summary SSE 클라이언트 관리 ---
+const summarySSEClients = new Set<express.Response>();
+
+async function notifyAllSummaryClients() {
+  const keys = await redis.keys('summary:*');
+  const count = keys.length;
+  const data = `data: ${JSON.stringify({ count })}\n\n`;
+  summarySSEClients.forEach(client => {
+    try { client.write(data); } catch (e) {}
+  });
+}
 
 // --- 핵심: 라우터 설정 ---
 let transport: SSEServerTransport | null = null;
@@ -158,6 +171,7 @@ app.post('/summary', express.json(), async (req, res) => {
   const id = Date.now().toString();
   const payload = JSON.stringify({ title: title ?? null, content, savedAt: new Date().toISOString() });
   await redis.set(`summary:${id}`, payload);
+  notifyAllSummaryClients();
   res.json({ ok: true, id });
 });
 
@@ -184,7 +198,33 @@ app.delete('/summary/:id', async (req, res) => {
     return;
   }
   await redis.del(key);
+  notifyAllSummaryClients();
   res.json({ ok: true, id: req.params.id, ...(JSON.parse(raw)) });
+});
+
+// ✅ 앱용: Summary SSE 스트림 (실시간 count 알림)
+app.get('/summary/events', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  summarySSEClients.add(res);
+
+  // 연결 즉시 현재 count 전송
+  const keys = await redis.keys('summary:*');
+  res.write(`data: ${JSON.stringify({ count: keys.length })}\n\n`);
+
+  // 30초마다 keepalive ping (연결 유지)
+  const keepalive = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch (e) {}
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(keepalive);
+    summarySSEClients.delete(res);
+  });
 });
 
 app.listen(port, () => {
