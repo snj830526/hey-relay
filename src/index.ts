@@ -7,7 +7,19 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 
 const app = express();
 const port = process.env.PORT || 3000;
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+  retryStrategy: (times) => Math.min(times * 200, 3000),
+  lazyConnect: false,
+  connectTimeout: 5000,
+  commandTimeout: 5000,
+});
+
+redis.on('error', (err) => {
+  console.error('[Redis] connection error:', err.message);
+});
+redis.on('reconnecting', () => {
+  console.log('[Redis] reconnecting...');
+});
 
 // ✅ 전역 미들웨어는 CORS만 남김! (스트림 파싱 방지)
 app.use(cors());
@@ -132,14 +144,30 @@ let transport: SSEServerTransport | null = null;
 // 🚨 형이 빼먹었던 부분 부활! (클로드가 처음에 연결을 맺는 길)
 app.get('/mcp', async (req, res) => {
   console.log("--- New SSE Connection (GET /mcp) ---");
-  
-  // 기존 연결 청소
+
+  // 기존 연결 청소 — 3초 timeout으로 hang 방지
   if (transport) {
-    try { await mcpServer.close(); } catch (e) {}
+    try {
+      await Promise.race([
+        mcpServer.close(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('close timeout')), 3000)
+        ),
+      ]);
+    } catch (e) {
+      console.warn('[MCP] previous transport cleanup:', (e as Error).message);
+    }
+    transport = null;
   }
 
   transport = new SSEServerTransport("/mcp", res);
   await mcpServer.connect(transport);
+
+  // SSE 연결 종료 시 transport 정리
+  req.on('close', () => {
+    console.log('[MCP] SSE connection closed, clearing transport');
+    transport = null;
+  });
 });
 
 // 클로드가 명령을 보내는 길
