@@ -26,6 +26,22 @@ function collapseBlankLines(text: string) {
   return text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+function stripLeadingTitle(lines: string[], title: string) {
+  const firstLineTitle = extractTitle(lines[0] ?? '');
+
+  if (firstLineTitle !== title) {
+    return lines;
+  }
+
+  const rest = lines.slice(1);
+
+  if ((rest[0] ?? '').trim().length === 0) {
+    return rest.slice(1);
+  }
+
+  return rest;
+}
+
 export function getSummaryTitle(content: string, title?: string) {
   const normalizedTitle = normalizeTitle(title);
 
@@ -52,7 +68,8 @@ export function formatSummaryContent(content: string, title?: string) {
     return collapseBlankLines(normalizedContent);
   }
 
-  const body = collapseBlankLines(existingTitle ? lines.slice(1).join('\n') : lines.join('\n'));
+  const contentLines = stripLeadingTitle(lines, finalTitle);
+  const body = collapseBlankLines(contentLines.join('\n'));
 
   if (body.length === 0) {
     return `[${finalTitle}]`;

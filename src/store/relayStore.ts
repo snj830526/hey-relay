@@ -8,6 +8,19 @@ export type SummaryPayload = {
   savedAt: string;
 };
 
+export type SavedSummary = {
+  id: string;
+  payload: SummaryPayload;
+  created: boolean;
+};
+
+export type SummaryRecord = {
+  id: string;
+  title: string | null;
+  content: string;
+  savedAt: string;
+};
+
 const MEMO_PREFIX = 'memo:';
 const SUMMARY_PREFIX = 'summary:';
 
@@ -30,9 +43,19 @@ export class RelayStore {
   }
 
   async saveSummary(content: string, title?: string) {
-    const id = Date.now().toString();
     const formattedContent = formatSummaryContent(content, title);
     const normalizedTitle = getSummaryTitle(formattedContent, title);
+    const existingSummary = await this.findMatchingSummary(normalizedTitle, formattedContent);
+
+    if (existingSummary) {
+      return {
+        id: existingSummary.id,
+        payload: existingSummary.payload,
+        created: false,
+      } satisfies SavedSummary;
+    }
+
+    const id = Date.now().toString();
     const payload: SummaryPayload = {
       title: normalizedTitle,
       content: formattedContent,
@@ -40,7 +63,7 @@ export class RelayStore {
     };
 
     await this.redis.set(`${SUMMARY_PREFIX}${id}`, JSON.stringify(payload));
-    return { id, payload };
+    return { id, payload, created: true } satisfies SavedSummary;
   }
 
   async listSummaryIds() {
@@ -54,10 +77,11 @@ export class RelayStore {
     return Promise.all(
       keys.map(async (key) => {
         const raw = await this.redis.get(key);
+        const payload = this.parseSummaryPayload(raw);
         return {
           id: key.replace(SUMMARY_PREFIX, ''),
-          ...(raw ? (JSON.parse(raw) as SummaryPayload) : {}),
-        };
+          ...payload,
+        } satisfies SummaryRecord;
       })
     );
   }
@@ -83,8 +107,40 @@ export class RelayStore {
 
     return {
       id,
-      ...(JSON.parse(raw) as SummaryPayload),
+      ...this.parseSummaryPayload(raw),
     };
+  }
+
+  private async findMatchingSummary(title: string | null, content: string) {
+    const summaries = await this.listSummaries();
+    const matchingSummary = summaries.find(
+      (summary) => summary.title === title && summary.content === content
+    );
+
+    if (!matchingSummary) {
+      return null;
+    }
+
+    return {
+      id: matchingSummary.id,
+      payload: {
+        title: matchingSummary.title,
+        content: matchingSummary.content,
+        savedAt: matchingSummary.savedAt,
+      } satisfies SummaryPayload,
+    };
+  }
+
+  private parseSummaryPayload(raw: string | null) {
+    if (!raw) {
+      return {
+        title: null,
+        content: '',
+        savedAt: '',
+      } satisfies SummaryPayload;
+    }
+
+    return JSON.parse(raw) as SummaryPayload;
   }
 
   private async pullByPrefix(prefix: string, peek: boolean) {

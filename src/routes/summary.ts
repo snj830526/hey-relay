@@ -15,10 +15,13 @@ export function createSummaryRouter(relayStore: RelayStore, summaryEventHub: Sum
     }
 
     const normalizedTitle = typeof title === 'string' ? title : undefined;
-    const { id } = await relayStore.saveSummary(content, normalizedTitle);
-    await summaryEventHub.notifyAll();
+    const { id, created } = await relayStore.saveSummary(content, normalizedTitle);
 
-    res.json({ ok: true, id });
+    if (created) {
+      await summaryEventHub.notifyAll();
+    }
+
+    res.json({ ok: true, id, created });
   });
 
   router.get('/', async (_req, res) => {

@@ -74,9 +74,14 @@ export async function executeMcpTool(
   if (name === 'push_summary') {
     const content = typeof args.content === 'string' ? args.content : '';
     const title = typeof args.title === 'string' ? args.title : undefined;
-    const { id } = await relayStore.saveSummary(content, title);
-    await summaryEventHub.notifyAll();
-    return asTextResult(`✓ 요약 저장 완료 (key: ${id})`);
+    const { id, created } = await relayStore.saveSummary(content, title);
+
+    if (created) {
+      await summaryEventHub.notifyAll();
+      return asTextResult(`✓ 요약 저장 완료 (key: ${id})`);
+    }
+
+    return asTextResult(`ℹ 이미 같은 요약이 있습니다. 기존 key: ${id}`);
   }
 
   if (name === 'pull_summary') {
