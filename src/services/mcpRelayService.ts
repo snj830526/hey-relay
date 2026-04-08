@@ -121,7 +121,7 @@ export class McpRelayService {
       return;
     }
 
-    await session.transport.handlePostMessage(req, res);
+    await session.transport.handlePostMessage(req, res, req.body);
   }
 
   private isLegacySseRequest(req: express.Request) {
