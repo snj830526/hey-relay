@@ -35,10 +35,10 @@ export function createApp(redis: Redis) {
 
   app.use(cors());
 
-  app.use('/mcp/claude', createMcpRouter(claudeMcpRelayService));
-  app.use('/mcp/openai', createMcpRouter(openAiMcpRelayService));
+  app.use('/mcp/claude', express.json(), createMcpRouter(claudeMcpRelayService));
+  app.use('/mcp/openai', express.json(), createMcpRouter(openAiMcpRelayService));
   app.use('/mcp/info', createMcpInfoRouter());
-  app.use('/mcp', createMcpRouter(legacyMcpRelayService));
+  app.use('/mcp', express.json(), createMcpRouter(legacyMcpRelayService));
   app.use('/push', express.json(), createMemoRouter(relayStore));
   app.use('/summary', express.json(), createSummaryRouter(relayStore, summaryEventHub));
   app.use('/openai', createOpenAiRouter(relayStore));

@@ -1,6 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import type express from 'express';
@@ -46,9 +47,23 @@ export class McpRelayService {
     return server;
   }
 
+  private sendJsonRpcError(
+    res: express.Response,
+    status: number,
+    code: number,
+    message: string
+  ) {
+    res.status(status).json({
+      jsonrpc: '2.0',
+      error: { code, message },
+      id: null,
+    });
+  }
+
   private async createStreamableSession() {
     const server = this.createServer();
     const transport = new StreamableHTTPServerTransport({
+      enableJsonResponse: true,
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sessionId) => {
         this.streamableSessions.set(sessionId, { server, transport });
@@ -131,12 +146,24 @@ export class McpRelayService {
     }
 
     const sessionId = req.header('mcp-session-id');
-    let session = sessionId ? this.streamableSessions.get(sessionId) : undefined;
+    const session = sessionId ? this.streamableSessions.get(sessionId) : undefined;
 
-    if (!session) {
-      session = await this.createStreamableSession();
+    if (session) {
+      await session.transport.handleRequest(req, res, req.body);
+      return;
     }
 
-    await session.transport.handleRequest(req, res);
+    if (!sessionId && isInitializeRequest(req.body)) {
+      const newSession = await this.createStreamableSession();
+      await newSession.transport.handleRequest(req, res, req.body);
+      return;
+    }
+
+    if (sessionId) {
+      this.sendJsonRpcError(res, 404, -32001, 'Session not found');
+      return;
+    }
+
+    this.sendJsonRpcError(res, 400, -32000, 'Bad Request: No valid session ID provided');
   }
 }
