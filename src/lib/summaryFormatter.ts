@@ -71,9 +71,5 @@ export function formatSummaryContent(content: string, title?: string) {
   const contentLines = stripLeadingTitle(lines, finalTitle);
   const body = collapseBlankLines(contentLines.join('\n'));
 
-  if (body.length === 0) {
-    return `[${finalTitle}]`;
-  }
-
-  return `[${finalTitle}]\n\n${body}`;
+  return body;
 }
