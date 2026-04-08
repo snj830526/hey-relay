@@ -1,5 +1,7 @@
 import type { Redis } from 'ioredis';
 
+import { formatSummaryContent, getSummaryTitle } from '../lib/summaryFormatter.js';
+
 export type SummaryPayload = {
   title: string | null;
   content: string;
@@ -29,9 +31,11 @@ export class RelayStore {
 
   async saveSummary(content: string, title?: string) {
     const id = Date.now().toString();
+    const formattedContent = formatSummaryContent(content, title);
+    const normalizedTitle = getSummaryTitle(formattedContent, title);
     const payload: SummaryPayload = {
-      title: title ?? null,
-      content,
+      title: normalizedTitle,
+      content: formattedContent,
       savedAt: new Date().toISOString(),
     };
 
