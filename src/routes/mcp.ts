@@ -5,12 +5,8 @@ import type { McpRelayService } from '../services/mcpRelayService.js';
 export function createMcpRouter(mcpRelayService: McpRelayService) {
   const router = Router();
 
-  router.get('/', async (req, res) => {
-    await mcpRelayService.openSseConnection(req, res);
-  });
-
-  router.post('/', async (req, res) => {
-    await mcpRelayService.handlePostMessage(req, res);
+  router.all('/', async (req, res) => {
+    await mcpRelayService.handleRequest(req, res);
   });
 
   return router;

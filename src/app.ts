@@ -27,7 +27,7 @@ export function createApp(redis: Redis) {
     summaryEventHub
   );
   const legacyMcpRelayService = new McpRelayService(
-    '/mcp/legacy',
+    '/mcp',
     'hey-relay-legacy',
     relayStore,
     summaryEventHub
