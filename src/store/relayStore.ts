@@ -23,6 +23,7 @@ export type SummaryRecord = {
 
 const MEMO_PREFIX = 'memo:';
 const SUMMARY_PREFIX = 'summary:';
+const PROTOCOL_PREFIX = 'protocol:';
 
 export class RelayStore {
   constructor(private readonly redis: Redis) {}
@@ -93,6 +94,32 @@ export class RelayStore {
   async getSummaryCount() {
     const keys = await this.redis.keys(`${SUMMARY_PREFIX}*`);
     return keys.length;
+  }
+
+  // ── Protocol (고정 운영 규약 저장소) ───────────────────────────────────────
+  // protocol은 consume 대상이 아닌 영구 참조 문서다.
+  // 읽어도 삭제되지 않으며, 명시적 delete로만 제거된다.
+
+  async setProtocol(key: string, content: string) {
+    await this.redis.set(`${PROTOCOL_PREFIX}${key}`, content);
+    return key;
+  }
+
+  async getProtocol(key: string) {
+    return this.redis.get(`${PROTOCOL_PREFIX}${key}`);
+  }
+
+  async listProtocols() {
+    const keys = await this.redis.keys(`${PROTOCOL_PREFIX}*`);
+    return keys.sort().map((k) => k.replace(PROTOCOL_PREFIX, ''));
+  }
+
+  async deleteProtocol(key: string) {
+    const fullKey = `${PROTOCOL_PREFIX}${key}`;
+    const content = await this.redis.get(fullKey);
+    if (!content) return null;
+    await this.redis.del(fullKey);
+    return content;
   }
 
   async deleteSummary(id: string) {

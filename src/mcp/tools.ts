@@ -43,6 +43,42 @@ export const mcpTools = [
     description: '현재 쌓인 대화 요약 목록 조회',
     inputSchema: { type: 'object', properties: {} },
   },
+  {
+    name: 'set_protocol',
+    description:
+      '운영 규약이나 고정 가이드를 key-value로 서버에 영구 저장합니다. consume 대상이 아닌 고정 문서(시스템 규약, 사용 가이드 등)용입니다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string' },
+        content: { type: 'string' },
+      },
+      required: ['key', 'content'],
+    },
+  },
+  {
+    name: 'get_protocol',
+    description: '저장된 운영 규약을 key로 조회합니다. 읽어도 삭제되지 않습니다.',
+    inputSchema: {
+      type: 'object',
+      properties: { key: { type: 'string' } },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'list_protocols',
+    description: '저장된 프로토콜 key 목록을 조회합니다.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'delete_protocol',
+    description: '저장된 프로토콜 항목을 삭제합니다.',
+    inputSchema: {
+      type: 'object',
+      properties: { key: { type: 'string' } },
+      required: ['key'],
+    },
+  },
 ] as const;
 
 function asTextResult(text: string) {
@@ -92,6 +128,36 @@ export async function executeMcpTool(
     const ids = await relayStore.listSummaryIds();
     const text = ids.length === 0 ? '(비어 있음)' : `총 ${ids.length}개\n${ids.join('\n')}`;
     return asTextResult(text);
+  }
+
+  if (name === 'set_protocol') {
+    const key = typeof args.key === 'string' ? args.key : '';
+    const content = typeof args.content === 'string' ? args.content : '';
+    if (!key) return asTextResult('오류: key가 필요합니다.');
+    await relayStore.setProtocol(key, content);
+    return asTextResult(`✓ 프로토콜 저장 완료 (key: ${key})`);
+  }
+
+  if (name === 'get_protocol') {
+    const key = typeof args.key === 'string' ? args.key : '';
+    if (!key) return asTextResult('오류: key가 필요합니다.');
+    const content = await relayStore.getProtocol(key);
+    if (!content) return asTextResult(`(프로토콜 없음: ${key})`);
+    return asTextResult(`[${key}]\n${content}`);
+  }
+
+  if (name === 'list_protocols') {
+    const keys = await relayStore.listProtocols();
+    const text = keys.length === 0 ? '(저장된 프로토콜 없음)' : `총 ${keys.length}개\n${keys.join('\n')}`;
+    return asTextResult(text);
+  }
+
+  if (name === 'delete_protocol') {
+    const key = typeof args.key === 'string' ? args.key : '';
+    if (!key) return asTextResult('오류: key가 필요합니다.');
+    const deleted = await relayStore.deleteProtocol(key);
+    if (!deleted) return asTextResult(`(프로토콜 없음: ${key})`);
+    return asTextResult(`✓ 프로토콜 삭제 완료 (key: ${key})`);
   }
 
   throw new Error(`Unknown tool: ${name}`);

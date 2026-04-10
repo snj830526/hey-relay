@@ -5,6 +5,7 @@ import type { Redis } from 'ioredis';
 import { createMcpInfoRouter, createMcpRouter } from './routes/mcp.js';
 import { createMemoRouter } from './routes/memo.js';
 import { createSummaryRouter } from './routes/summary.js';
+import { createProtocolRouter } from './routes/protocol.js';
 import { createOpenAiRouter } from './routes/openai.js';
 import { RelayStore } from './store/relayStore.js';
 import { SummaryEventHub } from './services/summaryEventHub.js';
@@ -41,13 +42,14 @@ export function createApp(redis: Redis) {
   app.use('/mcp', express.json(), createMcpRouter(legacyMcpRelayService));
   app.use('/push', express.json(), createMemoRouter(relayStore));
   app.use('/summary', express.json(), createSummaryRouter(relayStore, summaryEventHub));
+  app.use('/protocol', express.json(), createProtocolRouter(relayStore));
   app.use('/openai', createOpenAiRouter(relayStore));
 
   app.get('/health', async (_req, res) => {
     res.json({
       ok: true,
       service: 'hey-relay',
-      endpoints: ['/mcp', '/mcp/claude', '/mcp/openai', '/mcp/info', '/push', '/summary', '/openai'],
+      endpoints: ['/mcp', '/mcp/claude', '/mcp/openai', '/mcp/info', '/push', '/summary', '/protocol', '/openai'],
     });
   });
 
