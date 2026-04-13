@@ -87,21 +87,49 @@ export class McpRelayService {
   private async openLegacySseConnection(req: express.Request, res: express.Response) {
     console.log(`--- New SSE Connection (GET ${this.sessionPath}) ---`);
 
+    // Long-lived SSE 연결이 Express/Node 타임아웃에 끊기지 않도록 설정
+    res.setTimeout(0);
+    req.setTimeout(0);
+
     const server = this.createServer();
     const transport = new SSEServerTransport(this.sessionPath, res);
 
     this.legacySessions.set(transport.sessionId, { server, transport });
-    transport.onclose = async () => {
-      console.log(`[MCP:${this.serverName}] SSE connection closed, clearing transport`);
+
+    // Proxy/방화벽이 idle 연결을 끊지 않도록 25초마다 SSE keepalive 전송
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(': heartbeat\n\n');
+      } else {
+        clearInterval(heartbeat);
+      }
+    }, 25_000);
+
+    // transport.onclose / req close 중 먼저 발생한 쪽만 cleanup 처리
+    let closed = false;
+    const cleanup = async () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
       this.legacySessions.delete(transport.sessionId);
-      await server.close();
+      try {
+        await server.close();
+      } catch {
+        // 이미 닫힌 경우 무시
+      }
     };
 
-    await server.connect(transport);
+    transport.onclose = () => {
+      console.log(`[MCP:${this.serverName}] SSE transport closed`);
+      void cleanup();
+    };
 
     req.on('close', () => {
-      this.legacySessions.delete(transport.sessionId);
+      console.log(`[MCP:${this.serverName}] SSE request closed by client`);
+      void cleanup();
     });
+
+    await server.connect(transport);
   }
 
   private async handleLegacyPostMessage(req: express.Request, res: express.Response) {
