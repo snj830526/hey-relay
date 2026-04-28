@@ -7,15 +7,27 @@ export function createSummaryRouter(relayStore: RelayStore, summaryEventHub: Sum
   const router = Router();
 
   router.post('/', async (req, res) => {
-    const { content, title } = req.body;
+    const { content, raw, summary, title, tags, source } = req.body;
+    const blockRaw = typeof raw === 'string' ? raw : content;
 
-    if (typeof content !== 'string' || content.trim().length === 0) {
-      res.status(400).json({ error: 'content 필드가 필요합니다.' });
+    if (typeof blockRaw !== 'string' || blockRaw.trim().length === 0) {
+      res.status(400).json({ error: 'content 또는 raw 필드가 필요합니다.' });
       return;
     }
 
     const normalizedTitle = typeof title === 'string' ? title : undefined;
-    const { id, created } = await relayStore.saveSummary(content, normalizedTitle);
+    const normalizedSummary = typeof summary === 'string' ? summary : undefined;
+    const normalizedTags = Array.isArray(tags)
+      ? tags.filter((tag): tag is string => typeof tag === 'string')
+      : [];
+    const normalizedSource = typeof source === 'string' ? source : 'http_summary';
+    const { id, created } = await relayStore.saveSummary(
+      blockRaw,
+      normalizedTitle,
+      normalizedSource,
+      normalizedSummary,
+      normalizedTags
+    );
 
     if (created) {
       await summaryEventHub.notifyAll();
@@ -33,7 +45,7 @@ export function createSummaryRouter(relayStore: RelayStore, summaryEventHub: Sum
     const summary = await relayStore.deleteSummary(req.params.id);
 
     if (!summary) {
-      res.status(404).json({ error: '해당 요약을 찾을 수 없습니다.' });
+      res.status(404).json({ error: '해당 Context Block을 찾을 수 없습니다.' });
       return;
     }
 

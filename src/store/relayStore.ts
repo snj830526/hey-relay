@@ -4,8 +4,13 @@ import { formatSummaryContent, getSummaryTitle } from '../lib/summaryFormatter.j
 
 export type SummaryPayload = {
   title: string | null;
+  raw: string;
+  summary: string | null;
   content: string;
   savedAt: string;
+  createdAt: string;
+  tags: string[];
+  source: string | null;
 };
 
 export type SavedSummary = {
@@ -17,8 +22,13 @@ export type SavedSummary = {
 export type SummaryRecord = {
   id: string;
   title: string | null;
+  raw: string;
+  summary: string | null;
   content: string;
   savedAt: string;
+  createdAt: string;
+  tags: string[];
+  source: string | null;
 };
 
 const MEMO_PREFIX = 'memo:';
@@ -43,9 +53,16 @@ export class RelayStore {
     return this.pullByPrefix(MEMO_PREFIX, peek);
   }
 
-  async saveSummary(content: string, title?: string) {
+  async saveSummary(
+    content: string,
+    title?: string,
+    source: string | null = 'push_summary',
+    summary?: string | null,
+    tags: string[] = []
+  ) {
     const formattedContent = formatSummaryContent(content, title);
     const normalizedTitle = getSummaryTitle(formattedContent, title);
+    const normalizedSummary = summary?.trim() || formattedContent;
     const existingSummary = await this.findMatchingSummary(normalizedTitle, formattedContent);
 
     if (existingSummary) {
@@ -57,10 +74,16 @@ export class RelayStore {
     }
 
     const id = Date.now().toString();
+    const now = new Date().toISOString();
     const payload: SummaryPayload = {
       title: normalizedTitle,
+      raw: formattedContent,
+      summary: normalizedSummary,
       content: formattedContent,
-      savedAt: new Date().toISOString(),
+      savedAt: now,
+      createdAt: now,
+      tags,
+      source,
     };
 
     await this.redis.set(`${SUMMARY_PREFIX}${id}`, JSON.stringify(payload));
@@ -152,8 +175,13 @@ export class RelayStore {
       id: matchingSummary.id,
       payload: {
         title: matchingSummary.title,
+        raw: matchingSummary.raw,
+        summary: matchingSummary.summary,
         content: matchingSummary.content,
         savedAt: matchingSummary.savedAt,
+        createdAt: matchingSummary.createdAt,
+        tags: matchingSummary.tags,
+        source: matchingSummary.source,
       } satisfies SummaryPayload,
     };
   }
@@ -162,12 +190,40 @@ export class RelayStore {
     if (!raw) {
       return {
         title: null,
+        raw: '',
+        summary: null,
         content: '',
         savedAt: '',
+        createdAt: '',
+        tags: [],
+        source: null,
       } satisfies SummaryPayload;
     }
 
-    return JSON.parse(raw) as SummaryPayload;
+    const parsed = JSON.parse(raw) as Partial<SummaryPayload>;
+    const content = typeof parsed.content === 'string'
+      ? parsed.content
+      : typeof parsed.raw === 'string'
+        ? parsed.raw
+        : '';
+    const createdAt = typeof parsed.createdAt === 'string'
+      ? parsed.createdAt
+      : typeof parsed.savedAt === 'string'
+        ? parsed.savedAt
+        : '';
+
+    return {
+      title: typeof parsed.title === 'string' ? parsed.title : null,
+      raw: typeof parsed.raw === 'string' ? parsed.raw : content,
+      summary: typeof parsed.summary === 'string' ? parsed.summary : content,
+      content,
+      savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : createdAt,
+      createdAt,
+      tags: Array.isArray(parsed.tags)
+        ? parsed.tags.filter((tag): tag is string => typeof tag === 'string')
+        : [],
+      source: typeof parsed.source === 'string' ? parsed.source : null,
+    } satisfies SummaryPayload;
   }
 
   private async pullByPrefix(prefix: string, peek: boolean) {

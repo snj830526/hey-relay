@@ -9,7 +9,8 @@ export const mcpTools = [
   },
   {
     name: 'push_memo',
-    description: 'Claude가 정리한 내용을 저장합니다.',
+    description:
+      'AI가 Buffer로 보낼 내용을 Context Block으로 저장합니다. push_summary와 동일한 수신함에 들어갑니다.',
     inputSchema: {
       type: 'object',
       properties: { command: { type: 'string' } },
@@ -23,7 +24,8 @@ export const mcpTools = [
   },
   {
     name: 'push_summary',
-    description: 'Claude가 대화 내용을 요약해서 Redis에 저장합니다. 아이패드 앱에서 pull할 용도입니다.',
+    description:
+      'AI가 Buffer로 보낼 요약/응답을 Context Block으로 저장합니다. push_memo와 동일한 수신함에 들어갑니다.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -35,12 +37,12 @@ export const mcpTools = [
   },
   {
     name: 'pull_summary',
-    description: '앱에서 pull할 대화 요약을 꺼냅니다. 읽은 항목은 제거됩니다.',
+    description: '앱에서 pull할 Context Block을 꺼냅니다. 읽은 항목은 제거됩니다.',
     inputSchema: { type: 'object', properties: { peek: { type: 'boolean' } } },
   },
   {
     name: 'list_summaries',
-    description: '현재 쌓인 대화 요약 목록 조회',
+    description: '현재 쌓인 Context Block 목록 조회',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -97,8 +99,14 @@ export async function executeMcpTool(
 
   if (name === 'push_memo') {
     const command = typeof args.command === 'string' ? args.command : '';
-    const id = await relayStore.saveMemo(command);
-    return asTextResult(`✓ 저장 완료 (key: ${id})`);
+    const { id, created } = await relayStore.saveSummary(command, undefined, 'push_memo');
+
+    if (created) {
+      await summaryEventHub.notifyAll();
+      return asTextResult(`✓ Context Block 저장 완료 (key: ${id})`);
+    }
+
+    return asTextResult(`ℹ 이미 같은 Context Block이 있습니다. 기존 key: ${id}`);
   }
 
   if (name === 'list_memos') {
@@ -110,14 +118,14 @@ export async function executeMcpTool(
   if (name === 'push_summary') {
     const content = typeof args.content === 'string' ? args.content : '';
     const title = typeof args.title === 'string' ? args.title : undefined;
-    const { id, created } = await relayStore.saveSummary(content, title);
+    const { id, created } = await relayStore.saveSummary(content, title, 'push_summary');
 
     if (created) {
       await summaryEventHub.notifyAll();
-      return asTextResult(`✓ 요약 저장 완료 (key: ${id})`);
+      return asTextResult(`✓ Context Block 저장 완료 (key: ${id})`);
     }
 
-    return asTextResult(`ℹ 이미 같은 요약이 있습니다. 기존 key: ${id}`);
+    return asTextResult(`ℹ 이미 같은 Context Block이 있습니다. 기존 key: ${id}`);
   }
 
   if (name === 'pull_summary') {
